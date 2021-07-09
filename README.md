@@ -1,4 +1,6 @@
-# **dirdiff** -- CLI Directory Analysis Tool
+# dirdiff
+
+A CLI directory analysis tool built in *Julia*.
 
 ## Installation
 
