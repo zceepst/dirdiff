@@ -38,3 +38,8 @@ At the moment I'm thinking something like:
 ```
 $ dirdiff rec/write/... --dir1 "<first directory>" -dir2 "<second directory>" -v/-f/-r ...
 ```
+
+
+## Misc
+
+[Linux cli diff commands.](https://askubuntu.com/questions/421712/comparing-the-contents-of-two-directories)
