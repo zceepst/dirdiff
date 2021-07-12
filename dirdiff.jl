@@ -15,9 +15,6 @@ TODO:
 - split-up main script into sub parts (keep centralized until further system planning done)
 =#
 
-using CSV, FileIO, DataFrames
-using ImageMagick, Images, ImageIO
-
 # for now assume given directory paths, in future these will be provided via ArgParse shell args
 
 v51_files = CSV.File("../../dev-ops/sdcards/v51.csv") |> DataFrame |> x -> x[!, :Files]
@@ -62,61 +59,141 @@ v54_images = Dict(v54_bmp .=> load.(v54_path .* v54_bmp))
 v51_text = Dict(v51_txt .=> read.(v51_path .* v51_txt, String))
 v54_text = Dict(v54_txt .=> read.(v54_path .* v54_txt, String))
 
-# analyse the difference in image files between both directories
-# check: images contents, image names
-# sort into:
-# 	- common
-#	- forward (v1 -> v2, files in v2 not common to v1)
-#	- backward (v1 <- v2, files in v1 not common to v2)
-# edge cases comparing pairs (name1 => image1) & (name2 => image2):
-#	- if name1 == name2 but image1 != image2
-#	- if name1 != name2 but image1 == image2
-
 """
-	comparebmps(dict1, dict2)
+	encodeimages(collection::Dict{String, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}})
 
-Compare the `.bmp` file contents in dict1 and dict2.
-The data is formatted so that each pair in both dictionaries represents a single element in a directory:
-```
-element :: Pair{String, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}}
-```
-therefore the type signature of both parameters is:
-```
-dict1, dict2 :: Dict{String, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}}
-```
+Encode a dictionary of `filename::String => image::Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}` to a dictionary of `id::Int => image::Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}` pairs.
+Ensure image entries are unique before adding to dictionary.
 """
-function comparebmps(dict1, dict2)
-	analysis = [] # placeholder
-	return analysis
-end
-
-function commonbmps(dict1, dict2)
-	common = Dict{String, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}}()
-
-	# sort common images: check dict2, ref dict1
-	for pair in dict1
-		# if image from dict1 is found (not by name by raw data) in dict2, pair added to common
-		if pair[2] in values(dict2)
-			push!(common, pair) # add pair to common collection
+function encodeimages(collection)
+	encoded = Dict{Int, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}}() # initialise empty dictionary
+	count = 1
+	for pair in collection
+		# ensure image not already encoded for (such that allunique(values(encoded)) = true)
+		if !in(pair[2], values(encoded))
+			push!(encoded, count => pair[2]) # add unique image to encode dictionary
+			count += 1 # only increment count if image has been added
 		end
 	end
-	# @assert allunique(keys(common)) # passes for v51
-	@assert allunique(values(common)) # check all the images are unique in the common images
-	# assertion error v51 -- there must be duplicate images woth
-	# switch order: check dict1, ref dict2
-	# for pair in dict2
-		# if pair[2] in values(dict1)
-			# push!(common, pair)
-		# end
-	# end
 
-	return common
+	return encoded
 end
 
-# commonbmps(v51_images, v54_images)
-commonbmps(v54_images, v51_images)
-# both version fail common image unique assertion test
-# this means there are common image duplicates between both versions where both (or more) files
-# have different names but are the same image
+v51_lenraw = length(v51_images)
+v54_lenraw = length(v54_images)
 
-# v51_bmp, v54_bmp
+v51_imgenc = encodeimages(v51_images)
+v54_imgenc = encodeimages(v54_images)
+
+v51_lenenc = length(v51_imgenc)
+v54_lenenc = length(v54_imgenc)
+
+# we now want to sort the files into five categories:
+# (consider direction change from v51 to v54)
+# - unchanged	(filename & image unchanged)
+# - renamed		(image unchanged & new file name (careful with duplicates))
+# - reassigned	(filename unchanged & new image)
+# - removed		(filename & image removed)
+# - added		(new filename & image content)
+
+struct bmpdiffs
+	unchanged
+	reassigned
+	renamed
+	removed
+	added
+end
+
+function sortdiffs(collection1, collection2)
+	return bmpdiffs(
+		unchangedpairs(collection1, collection2),
+		reassignedpairs(collection1, collection2),
+		renamedpairs(collection1, collection2),
+		diffpairs(collection1, collection2),
+		diffpairs(collection2, collection1)
+	)
+end
+
+function unchangedpairs(collection1, collection2)
+	unchanged = Dict{String, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}}()
+	for pair in collection2
+		if in(pair, collection1)
+			push!(unchanged, pair)
+		end
+	end
+
+	return unchanged
+end
+
+function reassignedpairs(collection1, collection2)
+	reassigned = Dict{String, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}}()
+	for pair in collection2
+		if in(pair[1], keys(collection1)) && !in(pair[2], values(collection1))
+			push!(reassigned, pair)
+		end
+	end
+
+	return reassigned
+end
+
+function renamedpairs(collection1, collection2)
+	renamed = Dict{String, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}}()
+	for pair in collection2
+		if in(pair[2], values(collection1)) && !in(pair[1], keys(collection1))
+			push!(renamed, pair)
+		end
+	end
+
+	return renamed
+end
+
+# works for both removed and added pairs, switch argument order to change functionality
+function diffpairs(collection1, collection2)
+	removed = Dict{String, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}}()
+	for pair in collection1
+		if !in(pair, collection2) && !in(pair[2], values(collection2))
+			push!(removed, pair)
+		end
+	end
+
+	return removed
+end
+
+
+diff = sortdiffs(v51_images, v54_images) # diff type of version change info
+
+# test that `diff` is valid (length testing)
+function testdiff(diff)
+	for pair in diff.unchanged
+		@assert !in(pair, diff.reassigned)
+		@assert !in(pair, diff.renamed)
+		@assert !in(pair, diff.removed)
+		@assert !in(pair, diff.added)
+	end
+	for pair in diff.reassigned
+		@assert !in(pair, diff.unchanged)
+		@assert !in(pair, diff.renamed)
+		@assert !in(pair, diff.removed)
+		@assert !in(pair, diff.added) # fails for v51, v54 diff
+	end
+	for pair in diff.renamed
+		@assert !in(pair, diff.unchanged)
+		@assert !in(pair, diff.reassigned)
+		@assert !in(pair, diff.removed)
+		@assert !in(pair, diff.added)
+	end
+	for pair in diff.removed
+		@assert !in(pair, diff.unchanged)
+		@assert !in(pair, diff.reassigned)
+		@assert !in(pair, diff.renamed)
+		@assert !in(pair, diff.added)
+	end
+	for pair in diff.added
+		@assert !in(pair, diff.unchanged)
+		@assert !in(pair, diff.reassigned)
+		@assert !in(pair, diff.renamed)
+		@assert !in(pair, diff.removed)
+	end
+end
+
+testdiff(diff)
