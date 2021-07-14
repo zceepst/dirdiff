@@ -42,4 +42,6 @@ $ dirdiff rec/write/... --dir1 "<first directory>" -dir2 "<second directory>" -v
 
 ## Misc
 
+Investigate [TerminalMenus](https://docs.julialang.org/en/v1/stdlib/REPL/#TerminalMenus) in julia docs.
+
 [Linux cli diff commands.](https://askubuntu.com/questions/421712/comparing-the-contents-of-two-directories)

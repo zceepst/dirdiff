@@ -3,7 +3,7 @@
 #-----------------------------------------------#
 # Command line execution script for analysing	#
 # the differences in directory contents, used	#
-# mainly to compare SD card versions which		#
+# mainly to compare SD card versions whic	#
 # contain `.bmp` and config files.				#
 #						~						#
 #				Pierre Steen 2021				#
@@ -84,6 +84,25 @@ function parsecommandline()
 end
 
 ## Analysis
+
+"""
+	filterformat(mixed_filenames)
+
+Split `.txt` and `.bmp` files from array of mixed string file names.
+"""
+function filterformat(mixed_filenames)
+	bmp_filenames = []
+	txt_filenames = []
+	for filename in mixed_filenames
+		if split(filename, ".")[2] != "txt"
+			push!(bmp_filenames, filename)
+		else
+			push!(txt_filenames, filename)
+		end
+	end
+
+	return bmp_filenames, txt_filenames
+end
 
 """
 	encodeimages(collection::Dict{String, Matrix{ColorTypes.RGB{FixedPointNumbers.N0f8}}})
@@ -172,33 +191,18 @@ end
 
 ## Shell diff and `.csv` file build
 
-"""
-	argstodirs(parsed_args)
-
-Assembles the output of `OutputCollector -> parsedcommandline()` to an array of directory strings.
-"""
 function argstodirs(parsed_args)
-	return (parsed_args["dir1"], parsed_args["dir2"])
+	return [parsed_args["dir1"], parsed_args["dir2"]]
 end
 
-"""
-	streamfilenames(directories)
-
-Navigate to ref and target directory then run shell command:
-```
-find . -type f
-```
-which will create and output stream of all the file names in the current directory.
-Do this for each directory we want to analyse, use OutputCollector to collect stdout
-and stderr IO streams.
-Resulting output string will be formatted somewhat like
-```
-output = "<filename>\n<filename>\n<filename>\n..."
-```
-we can therefore use `x -> split(x, "\n")` to split the large string into sub-string filenames, removing the newline chars.
-Finally we return an array containing two sub-string vectors.
-"""
-function DEPRECIATEDstreamfilenames(directories)
+# navigate to ref and target directory then run shell command:
+# ```
+# find . -type f
+# ```
+# which will create and output stream of all the file names in the current directory.
+# Do this for each directory we want to analyse, use OutputCollector to collect stdout
+# and stderr IO streams.
+function streamfilenames(directories)
 	returnto = @__DIR__
 	filenames = []
 	script = """
@@ -218,93 +222,23 @@ function DEPRECIATEDstreamfilenames(directories)
 	end
 	cd(returnto)
 
-	return (filenames[1], filenames[2])
+	return filenames
 end
-
-# refactored file name shell command stream collector: ------------!!!
-function streamfilenames(directory)
-	locald = @__DIR__
-	script = """
-	#!/bin/bash
-	find . -type -f
-	"""
-
-	cd(directory)
-	oc = OutputCollector(`bash -c $script`; verbose=false)
-
-	if isempty(collect_stderr(oc))
-		cd(locald)
-		return String.(collect_stdout(oc))
-	end
-end
-
-"""
-REFACTOR TO: filterformat(mixed_fileformats; format="bmp") --------!!!
-
-	filterformat(mixed_filenames)
-
-Split `.txt` and `.bmp` files from array of mixed string file names.
-"""
-function filterformat(mixed_filenames)
-	bmp_filenames = String[]
-	txt_filenames = String[]
-	for filename in mixed_filenames
-		if split(filename, ".")[3] != "txt"
-			push!(bmp_filenames, filename)
-		else
-			push!(txt_filenames, filename)
-		end
-	end
-
-	return bmp_filenames, txt_filenames
-end
-
-
 
 ## Main Function
 
-# Next steps:
-# - [x] split .bmp txt file
-# - [x] construct Pair(filename => image) and Pair(filename => content) dictionaries
-# - [x] calculate changes and construct Differences instance
-# - []
-# - []
 function main()
 	# read args then capture filenames from bash IO stream using OutputCollector
 	parsed_args = parsecommandline()
+	filenames = argstodirs(parsed_args) |> streamfilenames # size (2, ,) array containing dir filenames
 
-	# use when testing from julia> REPL
-	# parsed_args = Dict(
-		# "dir1" => "/home/pb/Documents/work/dev-ops/sdcards/CHGCTV51/",
-		# "dir2" => "/home/pb/Documents/work/dev-ops/sdcards/CHGCTV54/"
-	# )
+	# next steps:
+	# - split .bmp txt file
+	# - construct Pair(filename => image) and Pair(filename => content) dictionaries
+	# - calculate changes and construct Differences instance
 
-	# generate directory strings, then make filename string vector tuple
-	dir_paths = argstodirs(parsed_args)
-	ref_names, tgt_names = streamfilenames.(dir_paths)
-
-	ref = String.(ref_names[1:(end-1)]) # remove trailing empty string
-	tgt = String.(tgt_names[1:(end-1)])
-
-	ref_bmp, ref_txt = filterformat(ref) # filter reference and target filenames lists into `.bmp` and `.txt`
-	tgt_bmp, tgt_txt = filterformat(tgt)
-
-	# load images and text files into dictionaries, keeping track of (filename => contents) pairs
-
-	# images
-	ref_imgs = Dict(ref_bmp .=> load.(dir_paths[1] .* ref_bmp))
-	tgt_imgs = Dict(tgt_bmp .=> load.(dir_paths[2] .* tgt_bmp))
-
-	# txt
-	ref_text = Dict(ref_txt .=> read.(dir_paths[1] .* ref_txt, String))
-	tgt_text = Dict(tgt_txt .=> read.(dir_paths[2] .* tgt_txt, String))
-
-	# calculate differences between reference and target files, construct Differences data type
-	imgs_diff = calcdifferences(ref_imgs, tgt_imgs)
-	text_diff = calcdifferences(ref_text, tgt_text)
-
-    return imgs_diff, text_diff
+    return filenames
 end
 
-# @show main() # program execution
-@show out = main()
+@show main() # program execution
+

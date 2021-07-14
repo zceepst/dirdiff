@@ -490,6 +490,11 @@ git-tree-sha1 = "85f8e6578bf1f9ee0d11e7bb1b1456435479d47c"
 uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 version = "1.4.1"
 
+[[OutputCollectors]]
+git-tree-sha1 = "d86c19b7fa8ad6a4dc8ec2c726642cc6291b2941"
+uuid = "6c11c7d4-943b-4e2b-80de-f2cfc2930a8c"
+version = "0.1.0"
+
 [[PNGFiles]]
 deps = ["Base64", "CEnum", "ImageCore", "IndirectArrays", "OffsetArrays", "libpng_jll"]
 git-tree-sha1 = "520e28d4026d16dcf7b8c8140a3041f0e20a9ca8"
