@@ -198,7 +198,7 @@ output = "<filename>\n<filename>\n<filename>\n..."
 we can therefore use `x -> split(x, "\n")` to split the large string into sub-string filenames, removing the newline chars.
 Finally we return an array containing two sub-string vectors.
 """
-function DEPRECIATEDstreamfilenames(directories)
+function streamfilenames(directories)
 	returnto = @__DIR__
 	filenames = []
 	script = """
@@ -211,7 +211,7 @@ function DEPRECIATEDstreamfilenames(directories)
 		oc = OutputCollector(`bash -c $script`; verbose=false)
 		merge(oc)
 		if isempty(collect_stderr(oc))
-			push!(filenames, split(collect_stdout(oc), "\n"))
+			push!(filenames, String.(split(collect_stdout(oc), "\n")[1:(end-1)]))
 		else
 			break
 		end
@@ -222,21 +222,22 @@ function DEPRECIATEDstreamfilenames(directories)
 end
 
 # refactored file name shell command stream collector: ------------!!!
-function streamfilenames(directory)
-	locald = @__DIR__
-	script = """
-	#!/bin/bash
-	find . -type -f
-	"""
-
-	cd(directory)
-	oc = OutputCollector(`bash -c $script`; verbose=false)
-
-	if isempty(collect_stderr(oc))
-		cd(locald)
-		return String.(collect_stdout(oc))
-	end
-end
+# function streamfilenames(directory)
+	# locald = @__DIR__
+	# script = """
+	# #!/bin/bash
+	# find . -type f
+	# """
+#
+	# cd(directory)
+	# oc = OutputCollector(`bash -c $script`; verbose=false)
+	# @assert isempty(collect_stderr(oc))
+#
+	# names = String.(split(collect_stdout(oc)[1:(end-1)], "\n"))
+	# cd(locald)
+#
+	# return names
+# end
 
 """
 REFACTOR TO: filterformat(mixed_fileformats; format="bmp") --------!!!
@@ -259,7 +260,54 @@ function filterformat(mixed_filenames)
 	return bmp_filenames, txt_filenames
 end
 
+"""
+	formatdifferences(analysis::Differences)
 
+Formats the directory file content difference analysis results into a form which can later be parsed and used for programmatically determining the necessary file downloads, name changes and deletions to perform to convert the group of files from the reference directory to the target directory.
+"""
+# function formatdifferences(images::Tuple{T,T}, text::Tuple{T,T}, analysis::Differences) where {T<:AbstractDict}
+function formatdifferences(image_analysis::Differences, text_analysis::Differences)
+	# write a file (csv?, txt? JSON?)
+	# data that needs to be conveyed:
+	# reference file:	<filename>.<extension>
+	# diff analysis:	<unchanged/reassigned/renamed/removed/added>
+	#
+end
+
+## Tests
+
+function testdiff(diff)
+	for pair in diff.unchanged
+		@assert !in(pair, diff.reassigned)
+		@assert !in(pair, diff.renamed)
+		@assert !in(pair, diff.removed)
+		@assert !in(pair, diff.added)
+	end
+	for pair in diff.reassigned
+		@assert !in(pair, diff.unchanged)
+		@assert !in(pair, diff.renamed)
+		@assert !in(pair, diff.removed)
+		@assert !in(pair, diff.added) # fails for v51, v54 diff
+	end
+	for pair in diff.renamed
+		@assert !in(pair, diff.unchanged)
+		@assert !in(pair, diff.reassigned)
+		@assert !in(pair, diff.removed)
+		@assert !in(pair, diff.added)
+	end
+	for pair in diff.removed
+		@assert !in(pair, diff.unchanged)
+		@assert !in(pair, diff.reassigned)
+		@assert !in(pair, diff.renamed)
+		@assert !in(pair, diff.added)
+	end
+	for pair in diff.added
+		@assert !in(pair, diff.unchanged)
+		@assert !in(pair, diff.reassigned) # fails for v51, v54 diff -- overlap between added & reassigned sets
+		@assert !in(pair, diff.renamed)
+		@assert !in(pair, diff.removed)
+	end
+end
 
 ## Main Function
 
@@ -271,23 +319,20 @@ end
 # - []
 function main()
 	# read args then capture filenames from bash IO stream using OutputCollector
-	parsed_args = parsecommandline()
+	# parsed_args = parsecommandline()
 
 	# use when testing from julia> REPL
-	# parsed_args = Dict(
-		# "dir1" => "/home/pb/Documents/work/dev-ops/sdcards/CHGCTV51/",
-		# "dir2" => "/home/pb/Documents/work/dev-ops/sdcards/CHGCTV54/"
-	# )
+	parsed_args = Dict(
+		"dir1" => "/home/pb/Documents/work/dev-ops/sdcards/CHGCTV51/",
+		"dir2" => "/home/pb/Documents/work/dev-ops/sdcards/CHGCTV54/"
+	)
 
 	# generate directory strings, then make filename string vector tuple
 	dir_paths = argstodirs(parsed_args)
-	ref_names, tgt_names = streamfilenames.(dir_paths)
+	ref_names, tgt_names = streamfilenames(dir_paths)
 
-	ref = String.(ref_names[1:(end-1)]) # remove trailing empty string
-	tgt = String.(tgt_names[1:(end-1)])
-
-	ref_bmp, ref_txt = filterformat(ref) # filter reference and target filenames lists into `.bmp` and `.txt`
-	tgt_bmp, tgt_txt = filterformat(tgt)
+	ref_bmp, ref_txt = filterformat(ref_names) # filter reference and target filenames lists into `.bmp` and `.txt`
+	tgt_bmp, tgt_txt = filterformat(tgt_names)
 
 	# load images and text files into dictionaries, keeping track of (filename => contents) pairs
 
@@ -300,11 +345,10 @@ function main()
 	tgt_text = Dict(tgt_txt .=> read.(dir_paths[2] .* tgt_txt, String))
 
 	# calculate differences between reference and target files, construct Differences data type
-	imgs_diff = calcdifferences(ref_imgs, tgt_imgs)
+	imgs_diff = calcdifferences(ref_imgs, tgt_imgs) # ::Differences
 	text_diff = calcdifferences(ref_text, tgt_text)
-
-    return imgs_diff, text_diff
 end
 
 # @show main() # program execution
 @show out = main()
+
